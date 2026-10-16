@@ -349,8 +349,9 @@ def parent_name():
         return "unknown"
 
 def daily():
-    """Check Keniel's latest DEV articles, compare with the last check, write a short report. Facts come from code;
-    the model only writes the 'what deserves attention' paragraph. A failed fetch reports failure and changes nothing."""
+    """Check Keniel's latest 10 DEV articles, compare with the last check, write a short report. Facts and attention
+    text are computed by code from the retrieved DEV data; the model is not called by the daily job. A failed fetch
+    reports failure and changes nothing."""
     log({"type": "start", "mode": "daily", "pid": os.getpid(), "ppid": os.getppid(), "parent": parent_name(), "model": MODEL})
     stamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S")  # seconds: two runs never collide
     os.makedirs(REPORTS, exist_ok=True)
