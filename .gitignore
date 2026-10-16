@@ -1,0 +1,8 @@
+# private, stays on this Mac
+logs/
+memory/
+state/
+reports/
+STATUS.md
+companion_*.py
+__pycache__/
