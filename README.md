@@ -1,6 +1,6 @@
 # Agent One
 
-A small personal AI agent that runs on a regular Mac with a free local model, and **cannot** post, send, delete or rewrite its own memory, because the code doesn't give it a way to. Not because it was asked nicely.
+A small personal AI agent that runs on a regular Mac with a free local model. **The model cannot** post, send, delete or write memory, because none of those are on its tool list. Not because it was asked nicely.
 
 It's the first working piece of a companion + guardian agent I'm building in public. It's early, and the limits below are real.
 
@@ -40,8 +40,8 @@ Change `DEV_USER` in `companion.py` to your own DEV username.
 The script uses my Python path; edit `PY=` for yours. Cron only runs while the Mac is awake.
 
 ## Known limits (honest list)
-- **Slow:** about 1–4 minutes per answer with `llama3.2` on a 2019-era MacBook.
+- **Slow:** answers with a recorded duration took 45 seconds to about 3½ minutes with `llama3.2` on a 2019-era MacBook.
 - **The small model words uncertainty badly.** Given a memory that says "undecided" and a rule that says "never answer yes or no", it still answered "not yet". The facts it's given are right; its wording isn't always.
-- **Read-only on purpose.** It can't act on anything yet. Security testing (tricky instructions hidden in data, forbidden actions, failures mid-run) hasn't been done.
+- **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data and a job interrupted mid-run are untested.
 - **The decision record checks hash-chain consistency, not authorship.** Another process running as your user could replace it and compute a new valid chain. The real boundary right now is that the agent has no write tools.
 - Unattended operation: the first scheduled run is 2026-10-17. Until it has run on its own for a few days, treat "runs on its own" as unproven.
