@@ -12,7 +12,7 @@ It's the first working piece of a companion + guardian agent I'm building in pub
   - `preference` and `proposal`: saved **only by you**, with `/remember preference: ...` or `/remember proposal: ...`. The model has no tool that writes memory.
   - `observation`: written only by code, from structured tool results (the daily job).
   - decisions are never stored in memory. The agent treats something as decided only if it's in a separate owner decision record (`~/.team/DECISIONS.md` in my setup, written by a keyboard-only command). No record means undecided.
-- **Has a daily job that can be scheduled with cron** (the first unattended run is still pending): `--daily` compares your latest 10 DEV articles with the last check and writes a report.
+- **Has a daily job scheduled with cron.** The first unattended run completed on 2026-10-17 at 09:05 local time; that's one successful unattended run so far. `--daily` compares your latest 10 DEV articles with the last check and writes a report.
   - The facts come from code.
   - It doesn't read comment text, so the report says that the content and importance of a new comment are **unknown**, instead of guessing.
   - A failed fetch writes a failure report and changes nothing.
@@ -44,4 +44,4 @@ The script uses my Python path; edit `PY=` for yours. Cron only runs while the M
 - **The small model words uncertainty badly.** Given a memory that says "undecided" and a rule that says "never answer yes or no", it still answered "not yet". The facts it's given are right; its wording isn't always.
 - **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data and a job interrupted mid-run are untested.
 - **The decision record checks hash-chain consistency, not authorship.** Another process running as your user could replace it and compute a new valid chain. The real boundary right now is that the agent has no write tools.
-- Unattended operation: the first scheduled run is 2026-10-17. Until it has run on its own for a few days, treat "runs on its own" as unproven.
+- **Unattended operation: one successful scheduled run so far** (2026-10-17, 09:05). That's evidence of one run, not of long-term reliability.
