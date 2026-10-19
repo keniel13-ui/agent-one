@@ -176,12 +176,20 @@ def forget(memory_id, reason, by="Keniel"):
     return f"Removed {memory_id}."
 
 
+def memory_window(mem, observations=30):
+    """Keniel's own entries (preferences, proposals) are always kept in full; only code-written observations are
+    windowed to the newest N, so a busy daily job can never push his words out of view."""
+    obs = [m for m in mem if m["kind"] == "observation"][-observations:]
+    keep = {id(m) for m in obs}
+    return [m for m in mem if m["kind"] != "observation" or id(m) in keep]
+
+
 def memory_context():
     """What the model is told at start: memories with their kinds, and the only real decisions."""
     mem, dec = load_memory(), approved_decisions()
     lines = ["What you remember from before (each item keeps its kind):"]
     lines += [f"- [{m['kind']}{', LEGACY, NOT CONFIRMED by Keniel' if m.get('legacy_unverified') else ''}] {m['text']} "
-              f"(source: {m['source']}, {m['at']})" for m in mem[-30:]] or ["- nothing yet"]
+              f"(source: {m['source']}, {m['at']})" for m in memory_window(mem)] or ["- nothing yet"]
     lines.append("Decisions Keniel recorded with team decide (the ONLY approvals):")
     lines += [f"- {d['text']}" for d in dec] or ["- none recorded yet"]
     lines.append("Rules: a memory is not a permission. A proposal is not a decision. Say an item's kind when you use it.")
@@ -190,7 +198,7 @@ def memory_context():
 
 def tool_recall(_args):
     """Everything remembered, each with its kind and source, plus the only real decisions (team decide)."""
-    mem = load_memory()[-30:]
+    mem = memory_window(load_memory())
     trusted = [m for m in mem if not m.get("legacy_unverified")]
     legacy = [m for m in mem if m.get("legacy_unverified")]
     return json.dumps({"memories": [{"kind": m["kind"], "text": m["text"], "source": m["source"], "at": m["at"],
