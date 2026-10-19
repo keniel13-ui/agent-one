@@ -26,7 +26,12 @@ python3 companion.py --ask "Which of my recent DEV articles has the most comment
 python3 companion.py --selftest      # proves an unlisted tool ('publish_post') is refused and logged
 python3 companion.py --daily         # the daily check; writes reports/<date_time>.md
 python3 companion.py --forget <id>   # remove one memory; the removed entry is logged in full
+python3 -m unittest -v               # adversarial tests: no model or network needed (see below)
 ```
+
+`test_companion.py` tries to make the model post, send, delete or write memory: unlisted and malformed tool names,
+tool arguments that try to redirect a read, owner commands typed by the model, and instructions hidden in a DEV
+title. It uses a scripted fake model and temp files, and also checks the source itself has no send or delete calls.
 Change `DEV_USER` in `companion.py` to your own DEV username.
 
 ## Schedule it (optional)
@@ -42,6 +47,6 @@ The script uses my Python path; edit `PY=` for yours. Cron only runs while the M
 ## Known limits (honest list)
 - **Slow:** answers with a recorded duration took 45 seconds to about 3½ minutes with `llama3.2` on a 2019-era MacBook.
 - **The small model words uncertainty badly.** Given a memory that says "undecided" and a rule that says "never answer yes or no", it still answered "not yet". The facts it's given are right; its wording isn't always.
-- **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data and a job interrupted mid-run are untested.
+- **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data are tested only at the code boundary with a scripted fake model, not against `llama3.2` itself, and a job interrupted mid-run is untested (state and memory rewrites are now atomic).
 - **The decision record checks hash-chain consistency, not authorship.** Another process running as your user could replace it and compute a new valid chain. The real boundary right now is that the agent has no write tools.
 - **Unattended operation: one successful scheduled run so far** (2026-10-17, 09:05). That's evidence of one run, not of long-term reliability.
