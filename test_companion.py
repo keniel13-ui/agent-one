@@ -252,6 +252,20 @@ class MemoryWritesAreOwnerOrCodeOnly(Sandbox):
         self.assertEqual([m["text"] for m in c.load_memory()], ["weekly brief"])
         self.assertEqual(self.events("memory_removed")[0]["removed"], e)
 
+    def test_owner_entries_survive_a_busy_daily_job(self):
+        # izgorodin's case on DEV: 40 code-written observations must not push Keniel's own entries out of view.
+        c.owner_remember("/remember preference: short answers")
+        c.owner_remember("/remember proposal: weekly brief")
+        for i in range(40):
+            c.add_memory("observation", f"obs {i}", "daily check", ["r"])
+        recalled = [m["text"] for m in json.loads(c.tool_recall({}))["memories"]]
+        context = c.memory_context()
+        for text in ("short answers", "weekly brief"):
+            self.assertIn(text, recalled)
+            self.assertIn(text, context)
+        obs = [t for t in recalled if t.startswith("obs ")]
+        self.assertEqual(obs, [f"obs {i}" for i in range(10, 40)])  # exactly the newest 30, in order
+
 
 class Regressions(Sandbox):
     def test_missing_mission_file_does_not_crash_a_reply(self):

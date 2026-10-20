@@ -12,7 +12,7 @@ It's the first working piece of a companion + guardian agent I'm building in pub
   - `preference` and `proposal`: saved **only by you**, with `/remember preference: ...` or `/remember proposal: ...`. The model has no tool that writes memory.
   - `observation`: written only by code, from structured tool results (the daily job).
   - decisions are never stored in memory. The agent treats something as decided only if it's in a separate owner decision record (`~/.team/DECISIONS.md` in my setup, written by a keyboard-only command). No record means undecided.
-- **Has a daily job scheduled with cron.** The first unattended run completed on 2026-10-17 at 09:05 local time; that's one successful unattended run so far. `--daily` compares your latest 10 DEV articles with the last check and writes a report.
+- **Has a daily job scheduled with cron.** Unattended runs completed at 09:05 local time on 2026-10-17, 10-18 and 10-19 (three so far). `--daily` compares your latest 10 DEV articles with the last check and writes a report.
   - The facts come from code.
   - It doesn't read comment text, so the report says that the content and importance of a new comment are **unknown**, instead of guessing.
   - A failed fetch writes a failure report and changes nothing.
@@ -47,6 +47,6 @@ The script uses my Python path; edit `PY=` for yours. Cron only runs while the M
 ## Known limits (honest list)
 - **Slow:** answers with a recorded duration took 45 seconds to about 3½ minutes with `llama3.2` on a 2019-era MacBook.
 - **The small model words uncertainty badly.** Given a memory that says "undecided" and a rule that says "never answer yes or no", it still answered "not yet". The facts it's given are right; its wording isn't always.
-- **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data are tested only at the code boundary with a scripted fake model, not against `llama3.2` itself, and a job interrupted mid-run is untested (state and memory rewrites are now atomic).
+- **Read-only on purpose.** The model can't act on anything yet. The direct tool-blocking test and the installer's failure tests have run; hidden instructions inside retrieved data are tested only at the code boundary with a scripted fake model, not against `llama3.2` itself, and a job interrupted mid-run is untested. File rewrites are now atomic, so a crash can't leave a half-written file, but the daily job still saves its snapshot before its memory lines, so a stop between those two steps loses that day's memory entry (the report keeps it).
 - **The decision record checks hash-chain consistency, not authorship.** Another process running as your user could replace it and compute a new valid chain. The real boundary right now is that the agent has no write tools.
-- **Unattended operation: one successful scheduled run so far** (2026-10-17, 09:05). That's evidence of one run, not of long-term reliability.
+- **Unattended operation: three successful scheduled runs so far** (2026-10-17 to 10-19, 09:05). That's evidence of three runs, not of long-term reliability.
