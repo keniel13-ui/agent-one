@@ -38,6 +38,15 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
+def write_atomic(path, text):
+    """Replace a file in one step (temp file + os.replace), so a crash mid-write can't leave it half written."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def log(event):
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
@@ -113,7 +122,6 @@ def tool_dev_articles(_args):
 
 # ---- memory: its own file only; remembering never grants a tool or an approval --------------------------------
 MEMORY_KINDS = {"observation", "preference", "proposal"}  # "decision" is deliberately absent
-MODEL_KINDS = {"observation"}  # the model may only save tool-backed observations; Keniel's statements come via /remember
 
 
 def load_memory():
@@ -124,6 +132,8 @@ def load_memory():
 
 
 def add_memory(kind, text, source, evidence):
+    if kind not in MEMORY_KINDS:  # a "decision" can never become a memory, whichever code path asks
+        raise ValueError(f"memory kind {kind!r} is not allowed")
     os.makedirs(os.path.dirname(MEMORY), exist_ok=True)
     entry = {"id": f"m-{now()}-{len(load_memory())}", "kind": kind, "text": text, "source": source,
              "evidence": evidence, "at": now()}
@@ -133,45 +143,13 @@ def add_memory(kind, text, source, evidence):
     return entry
 
 
-def tool_remember(args):
-    """Save one memory. Kinds are checked in code: a 'decision' can never be saved (only team decide makes one);
-    an 'observation' needs a tool receipt from this same turn; preferences and proposals keep Keniel's words."""
-    kind = str(args.get("kind", "")).strip().lower()
-    text = str(args.get("text", "")).strip()
-    if kind not in MEMORY_KINDS:
-        log({"type": "memory_refused", "kind": kind, "text": text, "reason": "kind not allowed"})
-        return (f"REFUSED: '{kind}' cannot be remembered. Allowed: observation, preference, proposal. "
-                "Decisions exist only when Keniel records them with team decide.")
-    if not text:
-        return "REFUSED: nothing to remember."
-    if any(m["kind"] == kind and m["text"].strip().lower() == text.lower() for m in load_memory()):
-        log({"type": "memory_refused", "kind": kind, "text": text, "reason": "already remembered"})
-        return f"Already remembered as {kind}; not saved twice."
-    if kind in MEMORY_KINDS and kind not in MODEL_KINDS:
-        log({"type": "memory_refused", "kind": kind, "text": text, "reason": "only Keniel's /remember command saves this kind"})
-        return (f"REFUSED: you can't save a {kind}. Only Keniel saves preferences and proposals himself, with "
-                "'/remember preference: ...' or '/remember proposal: ...'. Tell him he can do that.")
-    if kind == "observation":
-        tool_receipts = [u["call_id"] for u in USED if u["tool"] != "remember"]
-        if not tool_receipts:
-            log({"type": "memory_refused", "kind": kind, "text": text, "reason": "no tool evidence this turn"})
-            return ("REFUSED: an observation needs a tool result from this turn as its source. If Keniel said this, "
-                    "he can save it himself with /remember.")
-        e = add_memory(kind, text, "tool receipts", tool_receipts)
-    else:
-        e = add_memory(kind, text, "Keniel in chat", CURRENT_USER_TEXT[0])
-    log({"type": "memory_saved", "id": e["id"], "kind": kind, "text": text, "source": e["source"]})
-    return f"Saved as {kind} ({e['id']})."
-
-
 def forget(memory_id, reason, by="Keniel"):
     """Remove one memory by id. The removed entry is copied into the log in full, so nothing vanishes silently."""
     mem = load_memory()
     gone = [m for m in mem if m["id"] == memory_id]
     if not gone:
         return f"No memory with id {memory_id}."
-    with open(MEMORY, "w", encoding="utf-8") as f:
-        f.writelines(json.dumps(m, ensure_ascii=False) + "\n" for m in mem if m["id"] != memory_id)
+    write_atomic(MEMORY, "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in mem if m["id"] != memory_id))
     log({"type": "memory_removed", "removed": gone[0], "reason": reason, "by": by})
     return f"Removed {memory_id}."
 
@@ -213,7 +191,7 @@ def tool_recall(_args):
                       ensure_ascii=False)
 
 
-SOURCES = {"read_mission": MISSION_PATH, "dev_articles": DEV_URL, "remember": MEMORY, "recall": MEMORY}
+SOURCES = {"read_mission": MISSION_PATH, "dev_articles": DEV_URL, "recall": MEMORY}
 
 NO_ARGS = {"type": "object", "properties": {}, "required": []}
 TOOLS = {  # the allowlist: a name not in here is blocked and logged, whatever the model asks for
@@ -232,7 +210,9 @@ USED = []  # receipts for the current turn, so the app (not the model) can name 
 
 
 def run_tool(name, args):
-    if name not in TOOLS:
+    # A malformed name (a list, a dict, None) is refused and logged like any other unlisted name, instead of
+    # crashing the turn before the refusal is recorded.
+    if not isinstance(name, str) or name not in TOOLS:
         log({"type": "tool_blocked", "tool": name, "args": args, "reason": "not on the allowlist"})
         return f"BLOCKED: '{name}' is not an allowed tool."
     try:
@@ -266,7 +246,11 @@ def proposal_guard(reply):
     norm = lambda t: re.sub(r"\b(" + "|".join(words) + r")\b", lambda m: words[m.group(1).lower()], t, flags=re.I).lower()
     sentences = [x for x in re.split(r"(?<=[.!?])\s+", reply) if x]
     notes = []
-    for f in mission_fields():
+    try:
+        fields = mission_fields()
+    except OSError:  # no ~/MISSION.md: nothing is PROPOSED, so there is nothing to correct (and no crash)
+        fields = []
+    for f in fields:
         if f["status"] != PROPOSED:
             continue
         cues = [norm(c) for c in re.findall(r"\b(?:\d+|one|two|three|four|five)\s+(?:working\s+)?(?:sessions?|days?|briefs?|useful job)\b", f["text"], re.I)]
@@ -304,14 +288,12 @@ def owner_remember(user_text):
             if x["id"] == same[0]["id"]:
                 x.pop("legacy_unverified", None)
                 x.update(source="Keniel's /remember command", confirmed_by_keniel=user_text.strip(), confirmed_at=now())
-        with open(MEMORY, "w", encoding="utf-8") as f:
-            f.writelines(json.dumps(x, ensure_ascii=False) + "\n" for x in mem)
+        write_atomic(MEMORY, "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in mem))
         log({"type": "memory_confirmed", "id": same[0]["id"], "kind": kind, "text": text, "by": "Keniel's /remember"})
         return f"Confirmed: {kind} '{text}' is now marked as yours ({same[0]['id']})."
     if same:
         return f"Already remembered as {kind}."
-    e = add_memory(kind, text, "Keniel's /remember command", user_text.strip())
-    log({"type": "memory_saved", "id": e["id"], "kind": kind, "text": text, "source": e["source"]})
+    e = add_memory(kind, text, "Keniel's /remember command", user_text.strip())  # add_memory logs the save once
     return f"Saved as {kind} ({e['id']}), from your own command."
 
 
@@ -331,15 +313,17 @@ def turn(history, user_text, max_steps=4):
         history.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
-            reply, corrected = proposal_guard(msg.get("content", "").strip())
+            reply, corrected = proposal_guard((msg.get("content") or "").strip())
             reply = reply + "\n" + footer()
             msg["content"] = reply  # the model's next turn sees the correction and the sources (Kairos 1982)
             secs = round((datetime.datetime.now(datetime.timezone.utc) - t0).total_seconds())
             log({"type": "reply", "text": reply, "model": MODEL, "seconds": secs, "status_correction": corrected,
                  "receipts": [u["call_id"] for u in USED]})
             return reply
-        for c in calls:
-            name, args = c["function"]["name"], c["function"].get("arguments") or {}
+        for c in calls:  # the model's tool call is untrusted data: read it defensively, never index blindly
+            fn = c.get("function") if isinstance(c, dict) else None
+            fn = fn if isinstance(fn, dict) else {}
+            name, args = fn.get("name"), fn.get("arguments") or {}
             history.append({"role": "tool", "content": run_tool(name, args)})
     reply = "I stopped after several tool steps without an answer. That is a failure, logged."
     log({"type": "reply", "text": reply, "model": MODEL, "status": "step_limit"})
@@ -366,15 +350,22 @@ def daily():
     report_path = os.path.join(REPORTS, f"{stamp}.md")
     raw = run_tool("dev_articles", {})
     if raw.startswith("TOOL ERROR"):
-        open(report_path, "w").write(f"# Agent One daily check {stamp}\n\nFAILED: could not read DEV ({raw}). "
-                                     "Nothing compared, nothing changed. Last snapshot kept.\n")
+        write_atomic(report_path, f"# Agent One daily check {stamp}\n\nFAILED: could not read DEV ({raw}). "
+                                  "Nothing compared, nothing changed. Last snapshot kept.\n")
         log({"type": "stop", "mode": "daily", "status": "fetch_failed", "report": report_path})
         return 1
     now_items = {a["url"]: a for a in json.loads(raw)}
     try:
-        prev = json.load(open(STATE, encoding="utf-8"))
+        with open(STATE, encoding="utf-8") as f:
+            prev = json.load(f)
     except OSError:
         prev = None
+    except ValueError as e:  # unreadable snapshot: report it and stop; never silently reset the baseline
+        write_atomic(report_path, f"# Agent One daily check {stamp}\n\nFAILED: the last snapshot ({STATE}) is "
+                                  f"unreadable ({type(e).__name__}: {e}). Nothing compared, nothing changed. "
+                                  "Move or delete that file to start a new baseline.\n")
+        log({"type": "stop", "mode": "daily", "status": "snapshot_unreadable", "report": report_path})
+        return 1
     facts, new_comments, new_articles = [], [], []
     if prev is None:
         facts.append(f"First check: baseline recorded for the latest {len(now_items)} articles. No changes to report yet.")
@@ -409,10 +400,9 @@ def daily():
             "\n\n## What was checked\n"
             f"- Source: {DEV_URL} (latest 10 articles, not the whole account)\n- Receipt: {receipt} in logs/events.jsonl\n"
             f"- Process: pid {os.getpid()}, started by: {parent_name()} (parent pid {os.getppid()})\n")
-    open(report_path, "w").write(body)
-    os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    json.dump({u: {"title": a["title"], "comments": a["comments"], "reactions": a["reactions"]}
-               for u, a in now_items.items()}, open(STATE, "w"), ensure_ascii=False, indent=1)
+    write_atomic(report_path, body)
+    write_atomic(STATE, json.dumps({u: {"title": a["title"], "comments": a["comments"], "reactions": a["reactions"]}
+                                    for u, a in now_items.items()}, ensure_ascii=False, indent=1))
     for f in facts:  # each computed change becomes an observation the companion can recall in chat
         if f.startswith(("NEW", "reactions", "left")):
             add_memory("observation", f, "daily check", [receipt])
